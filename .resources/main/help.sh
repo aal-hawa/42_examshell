@@ -1,12 +1,38 @@
 clear
 bash label.sh
-echo "$(tput setaf 2)$(tput bold)Commands$(tput sgr0)"
-echo =============================
-echo "Type $(tput setaf 4)'exit'$(tput sgr 0) to exit the exam practice."
-echo "Type $(tput setaf 4)'next'$(tput sgr 0) to move on to the next subject."
-echo "Type $(tput setaf 4)'test'$(tput sgr 0) to test your code."
-echo "Type $(tput setaf 4)'menu'$(tput sgr 0) to return to the menu."
-echo =============================
-read -rp "Pres enter to return to the menu: " opt
+echo -e "$(tput setaf 2)$(tput bold)Commands$(tput sgr0)"
+echo "=================================================="
+echo -e "Type $(tput setaf 4)'list'$(tput sgr 0) to show all exercises in the current level."
+echo -e "Type $(tput setaf 4)'choose'$(tput sgr 0) to pick an exercise from a numbered menu."
+echo -e "Type $(tput setaf 4)'choose <name|num>'$(tput sgr 0) to pick an exercise by name or number directly."
+echo -e "Type $(tput setaf 4)'next'$(tput sgr 0) to get a random next exercise."
+echo -e "Type $(tput setaf 4)'test'$(tput sgr 0) to test your code (stops at first failure)."
+echo -e "Type $(tput setaf 4)'cases'$(tput sgr 0) to run ALL test cases & show detailed results."
+echo -e "Type $(tput setaf 4)'analysis'$(tput sgr 0) to get AI analysis of test failures."
+echo ""
+echo -e "$(tput setaf 2)$(tput bold)AI Provider Commands:$(tput sgr0)"
+echo -e "Type $(tput setaf 4)'setai add <name> <endpoint> [key] [model]'$(tput sgr 0) to add an AI provider."
+echo -e "Type $(tput setaf 4)'setai remove <name>'$(tput sgr 0) to remove an AI provider."
+echo -e "Type $(tput setaf 4)'setai use <name>'$(tput sgr 0) to switch active AI provider."
+echo -e "Type $(tput setaf 4)'setai key <name> <key>'$(tput sgr 0) to set API key for a provider."
+echo -e "Type $(tput setaf 4)'setai addmodel <name> <model>'$(tput sgr 0) to add a model to a provider."
+echo -e "Type $(tput setaf 4)'setai rmodel <name> <model>'$(tput sgr 0) to remove a model from a provider."
+echo -e "Type $(tput setaf 4)'setai defaultmodel <name> <model>'$(tput sgr 0) to set default model for a provider."
+echo -e "Type $(tput setaf 4)'setai model <name> <model>'$(tput sgr 0) to set default model (adds if new)."
+echo -e "Type $(tput setaf 4)'setai endpoint <name> <url>'$(tput sgr 0) to set endpoint for a provider."
+echo -e "Type $(tput setaf 4)'showai'$(tput sgr 0) to show all AI provider configurations."
+echo ""
+echo -e "$(tput setaf 2)$(tput bold)General Commands:$(tput sgr0)"
+echo -e "Type $(tput setaf 4)'status'$(tput sgr 0) to show current session info."
+echo -e "Type $(tput setaf 4)'clean'$(tput sgr 0) to remove compiled artifacts & temp files (.o, binaries, logs, test outputs)."
+echo -e "Type $(tput setaf 4)'fclean'$(tput sgr 0) for full clean: clean + remove rendu/ & trace/ workspaces."
+echo -e "Type $(tput setaf 4)'help'$(tput sgr 0) to see all commands."
+echo -e "Type $(tput setaf 4)'menu'$(tput sgr 0) to return to the menu."
+echo -e "Type $(tput setaf 4)'exit'$(tput sgr 0) to exit the exam practice."
+echo "=================================================="
+echo -e "$(tput setaf 3)Config file: ~/.42examshell_ai.conf$(tput sgr0)"
+echo -e "$(tput setaf 3)Default providers: openai, deepseek, gemini, openrouter (set key with: setai key <name> <key>)$(tput sgr0)"
+echo -e "$(tput setaf 3)Each provider can have multiple models with one default.$(tput sgr0)"
+echo -e "$(tput setaf 3)You can edit it manually to add/remove providers and models.$(tput sgr0)"
+read -rp "Press enter to return to the menu: " opt
 bash menu.sh
-
