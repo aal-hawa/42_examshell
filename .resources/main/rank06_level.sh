@@ -111,7 +111,8 @@ show_subject
 # Main command loop
 while true; do
     echo
-    read -rp "/> " input
+    read_command "/> "
+    input="$REPLY"
 
     # Parse command - handle "choose <name>" pattern
     cmd="${input%% *}"

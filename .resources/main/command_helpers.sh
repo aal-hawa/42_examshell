@@ -4,6 +4,90 @@
 # Required variables: all_exercises[], current_exercise, rank, level (or rank only for rank06)
 # Required functions: prepare_subject(), pick_new_subject()
 
+# ─────────────────────────────────────────────────────
+#  Command History — Up/Down arrow navigation
+#  Uses bash's built-in readline + history support.
+#  read -ep enables readline editing on the prompt,
+#  so Up/Down arrows cycle through history natively.
+#  Only user-entered commands at the /> prompt are kept.
+#  Inherited shell history is cleared on init so the
+#  user only sees their own examshell commands.
+#  History is persisted to ~/.42examshell_history
+# ─────────────────────────────────────────────────────
+
+_CMD_HISTORY_FILE="$HOME/.42examshell_history"
+_CMD_HISTORY_MAX=500
+_HISTORY_ENABLED=0
+
+_init_history() {
+    # Try to enable history (works in bash 4+ non-interactive scripts)
+    set -o history 2>/dev/null || return
+
+    # Clear any inherited history from the parent shell first
+    # so Up/Down only shows examshell user commands
+    history -c 2>/dev/null
+
+    HISTFILE="$_CMD_HISTORY_FILE"
+    HISTSIZE=$_CMD_HISTORY_MAX
+    HISTFILESIZE=$_CMD_HISTORY_MAX
+    HISTCONTROL=ignoredups:ignorespace
+
+    # Load only examshell-specific history (user commands from previous sessions)
+    if [ -f "$_CMD_HISTORY_FILE" ]; then
+        history -r "$_CMD_HISTORY_FILE" 2>/dev/null
+    fi
+
+    _HISTORY_ENABLED=1
+}
+
+_add_history() {
+    local cmd="$1"
+    [ -z "$cmd" ] && return
+    [ "${_HISTORY_ENABLED:-0}" -eq 0 ] && return
+
+    # Skip if same as last command (duplicate suppression)
+    local last
+    last=$(history 1 2>/dev/null | sed 's/^\s*[0-9]*\s*//')
+    [ "$cmd" = "$last" ] && return
+
+    # Add to in-memory history (for Up/Down navigation this session)
+    history -s "$cmd" 2>/dev/null
+
+    # Persist to file (append only the new entry)
+    echo "$cmd" >> "$_CMD_HISTORY_FILE" 2>/dev/null
+
+    # Trim history file if it exceeds max size
+    if [ -f "$_CMD_HISTORY_FILE" ]; then
+        local lines
+        lines=$(wc -l < "$_CMD_HISTORY_FILE" 2>/dev/null)
+        if [ "$lines" -gt $_CMD_HISTORY_MAX ]; then
+            local tmp_hist="/tmp/.examshell_hist_$$.tmp"
+            tail -$_CMD_HISTORY_MAX "$_CMD_HISTORY_FILE" > "$tmp_hist" 2>/dev/null
+            mv "$tmp_hist" "$_CMD_HISTORY_FILE" 2>/dev/null
+        fi
+    fi
+}
+
+# Read command input with history support (Up/Down arrows).
+# Usage:  read_command "/> "   → sets REPLY with the input
+# Inside level scripts:  read_command "/> "; input="$REPLY"
+read_command() {
+    local prompt="${1:-/> }"
+    REPLY=""
+    if [ "${_HISTORY_ENABLED:-0}" -eq 1 ]; then
+        # -e = readline (Up/Down history, line editing)
+        # -r = don't interpret backslashes
+        read -rep "$prompt"
+    else
+        read -rp "$prompt"
+    fi
+    # Add non-empty input to history
+    _add_history "$REPLY"
+}
+
+# Initialize history when this file is sourced
+_init_history
+
 show_help() {
     echo -e "${CYAN}${BOLD}Available Commands:${RESET}"
     echo "=================================================="
@@ -33,25 +117,186 @@ show_help() {
 }
 
 # ─────────────────────────────────────────────────────
-#  Interactive exercise picker (numbered menu)
+#  Interactive exercise picker — arrow key navigation
+#  + fallback to numbered menu
 # ─────────────────────────────────────────────────────
+
+# Read a single keypress; returns: UP, DOWN, ENTER, ESC, or the literal char
+_read_key() {
+    local key
+    IFS= read -rsn1 key 2>/dev/null
+    if [[ $? -ne 0 ]]; then
+        echo "TIMEOUT"
+        return
+    fi
+    if [[ $key == $'\x1b' ]]; then
+        # Start of escape sequence — read next two chars with short timeout
+        local seq1="" seq2=""
+        IFS= read -rsn1 -t 0.05 seq1 2>/dev/null
+        IFS= read -rsn1 -t 0.05 seq2 2>/dev/null
+        if [[ $seq1 == '[' ]]; then
+            case "$seq2" in
+                A) echo "UP";;
+                B) echo "DOWN";;
+                C) echo "RIGHT";;
+                D) echo "LEFT";;
+                *) echo "ESC_SEQ";;
+            esac
+        elif [[ $seq1 == 'O' ]]; then
+            # Some terminals use ESC O A/B/C/D for arrow keys
+            case "$seq2" in
+                A) echo "UP";;
+                B) echo "DOWN";;
+                C) echo "RIGHT";;
+                D) echo "LEFT";;
+                *) echo "ESC_SEQ";;
+            esac
+        else
+            echo "ESC"
+        fi
+    elif [[ $key == "" ]]; then
+        # Enter produces empty string with -sn1
+        echo "ENTER"
+    else
+        echo "$key"
+    fi
+}
+
+# Draw the choose menu with highlighted selection
+_draw_choose_menu() {
+    local selected="$1"
+    local total="$2"
+    local level_label="${level:-all}"
+
+    clear
+    echo -e "${CYAN}${BOLD}  Exercises in ${rank} > ${level_label}${RESET}"
+    echo "=================================================="
+    local idx=0
+    for ex in "${all_exercises[@]}"; do
+        if [[ $idx -eq $selected ]]; then
+            echo -e "  ${GREEN}${BOLD}▸ $((idx+1)). ${ex}${RESET}  ${YELLOW}◄ select${RESET}"
+        elif [[ "$ex" == "$current_exercise" ]]; then
+            echo -e "  ${YELLOW}  $((idx+1)). ${ex}  ◄ current${RESET}"
+        else
+            echo -e "  ${WHITE}  $((idx+1)). ${ex}${RESET}"
+        fi
+        idx=$((idx + 1))
+    done
+    echo "=================================================="
+    echo -e "  ${WHITE}↑↓ Navigate  │  Enter Select  │  q Cancel  │  1-${total} Jump${RESET}"
+}
+
+# Check if terminal likely supports raw key reading
+_terminal_supports_arrow() {
+    # If TERM is set and we have tput, it's likely a capable terminal
+    if [ -z "$TERM" ]; then
+        return 1
+    fi
+    if [ "$TERM" = "dumb" ] || [ "$TERM" = "unknown" ]; then
+        return 1
+    fi
+    # Must have read -sn1 support (bash 4+)
+    if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+        return 1
+    fi
+    return 0
+}
 
 interactive_choose() {
     local total=${#all_exercises[@]}
     local level_label="${level:-all}"
 
+    # Find the index of current exercise to start there
+    local selected=0
+    local idx=0
+    for ex in "${all_exercises[@]}"; do
+        if [[ "$ex" == "$current_exercise" ]]; then
+            selected=$idx
+            break
+        fi
+        idx=$((idx + 1))
+    done
+
+    # Try arrow-key mode first
+    if _terminal_supports_arrow; then
+        _draw_choose_menu "$selected" "$total"
+
+        while true; do
+            local key
+            key=$(_read_key)
+
+            case "$key" in
+                UP)
+                    selected=$((selected - 1))
+                    [ $selected -lt 0 ] && selected=$((total - 1))
+                    _draw_choose_menu "$selected" "$total"
+                    ;;
+                DOWN)
+                    selected=$((selected + 1))
+                    [ $selected -ge $total ] && selected=0
+                    _draw_choose_menu "$selected" "$total"
+                    ;;
+                ENTER)
+                    chosen_exercise="${all_exercises[$selected]}"
+                    echo -e "${GREEN}✔ Selected: $chosen_exercise${RESET}"
+                    return 0
+                    ;;
+                q|Q)
+                    echo -e "${YELLOW}Selection cancelled.${RESET}"
+                    return 1
+                    ;;
+                ESC|ESC_SEQ)
+                    echo -e "${YELLOW}Selection cancelled.${RESET}"
+                    return 1
+                    ;;
+                [0-9]*)
+                    # Number jump: handle multi-digit input
+                    # With -sn1 we only get one digit at a time, so handle single digit
+                    local num="$key"
+                    # If total > 9, try to read a second digit with short timeout
+                    if [ $total -gt 9 ]; then
+                        local next_digit
+                        next_digit=$(_read_key)
+                        if [[ "$next_digit" =~ ^[0-9]$ ]]; then
+                            num="${num}${next_digit}"
+                        elif [[ "$next_digit" == "ENTER" ]]; then
+                            : # use single digit
+                        else
+                            : # use single digit
+                        fi
+                    fi
+                    local num_idx=$((num - 1))
+                    if [[ $num_idx -ge 0 && $num_idx -lt $total ]]; then
+                        chosen_exercise="${all_exercises[$num_idx]}"
+                        echo -e "${GREEN}✔ Selected: $chosen_exercise${RESET}"
+                        return 0
+                    else
+                        _draw_choose_menu "$selected" "$total"
+                        echo -e "${RED}Invalid number: $num. Valid range: 1-${total}${RESET}"
+                        sleep 1
+                        _draw_choose_menu "$selected" "$total"
+                    fi
+                    ;;
+                *)
+                    # Unknown key — ignore
+                    ;;
+            esac
+        done
+    fi
+
+    # ── Fallback: numbered menu with read -rp ──
     while true; do
         clear
         echo -e "${CYAN}${BOLD}  Exercises in ${rank} > ${level_label}${RESET}"
         echo "=================================================="
-        local idx=0
+        local idx2=0
         for ex in "${all_exercises[@]}"; do
             if [[ "$ex" == "$current_exercise" ]]; then
-                echo -e "  ${YELLOW}${BOLD}→ $((idx+1)). ${ex}  ◄ current${RESET}"
+                echo -e "  ${YELLOW}${BOLD}→ $((idx2+1)). ${ex}  ◄ current${RESET}"
             else
-                echo -e "  ${WHITE}  $((idx+1)). ${ex}${RESET}"
+                echo -e "  ${WHITE}  $((idx2+1)). ${ex}${RESET}"
             fi
-            idx=$((idx + 1))
+            idx2=$((idx2 + 1))
         done
         echo "=================================================="
         echo -e "  ${WHITE}Enter number (1-${total}), name, or 'q' to cancel:${RESET}"
@@ -1152,6 +1397,112 @@ _collect_user_code() {
 
 # ── AI Analysis ──
 
+# Format AI response with colors and basic markdown rendering
+# Supports: code blocks, inline code, bold, italic, headers, lists, horizontal rules
+format_ai_output() {
+    local input="$1"
+    local in_code_block=0
+    local line
+
+    while IFS= read -r line; do
+        # ── Code block fences ──
+        if [[ "$line" =~ ^\`\`\` ]]; then
+            if [ $in_code_block -eq 0 ]; then
+                in_code_block=1
+                # Extract language if present (```c, ```python, etc.)
+                local lang="${line#\`\`\`}"
+                lang="${lang// /}"
+                if [ -n "$lang" ]; then
+                    echo -e "  ${BG_BLACK}${CYAN}${BOLD}─── ${lang} ───${RESET}"
+                else
+                    echo -e "  ${BG_BLACK}${CYAN}${BOLD}─── Code ───${RESET}"
+                fi
+            else
+                in_code_block=0
+                echo -e "${RESET}"
+            fi
+            continue
+        fi
+
+        # ── Inside code block: dim/cyan text with indentation ──
+        if [ $in_code_block -eq 1 ]; then
+            echo -e "  ${BG_BLACK}${CYAN}  ${line}${RESET}"
+            continue
+        fi
+
+        # ── Horizontal rule ──
+        if [[ "$line" =~ ^---+$ ]] || [[ "$line" =~ ^\*\*\*+$ ]] || [[ "$line" =~ ^___+$ ]]; then
+            echo -e "  ${WHITE}──────────────────────────────────────${RESET}"
+            continue
+        fi
+
+        # ── Headers ──
+        if [[ "$line" =~ ^###\ +(.*) ]]; then
+            local h3="${BASH_REMATCH[1]}"
+            h3=$(_format_inline "$h3")
+            echo -e "  ${MAGENTA}${BOLD}▸ ${h3}${RESET}"
+            continue
+        fi
+        if [[ "$line" =~ ^##\ +(.*) ]]; then
+            local h2="${BASH_REMATCH[1]}"
+            h2=$(_format_inline "$h2")
+            echo -e "  ${CYAN}${BOLD}◆ ${h2}${RESET}"
+            continue
+        fi
+        if [[ "$line" =~ ^#\ +(.*) ]]; then
+            local h1="${BASH_REMATCH[1]}"
+            h1=$(_format_inline "$h1")
+            echo -e "  ${CYAN}${BOLD}━━ ${h1} ━━${RESET}"
+            continue
+        fi
+
+        # ── Numbered list items ──
+        if [[ "$line" =~ ^[0-9]+\.\ +(.*) ]]; then
+            local num_part="${line%%.*}"
+            local rest="${line#*. }"
+            rest=$(_format_inline "$rest")
+            echo -e "  ${GREEN}${BOLD}${num_part}.${RESET} ${rest}"
+            continue
+        fi
+
+        # ── Bullet list items ──
+        if [[ "$line" =~ ^[-*]\ +(.*) ]]; then
+            local bullet_content="${BASH_REMATCH[1]}"
+            bullet_content=$(_format_inline "$bullet_content")
+            echo -e "  ${GREEN}•${RESET} ${bullet_content}"
+            continue
+        fi
+
+        # ── Empty line ──
+        if [[ -z "$line" ]]; then
+            echo ""
+            continue
+        fi
+
+        # ── Regular text ──
+        line=$(_format_inline "$line")
+        echo -e "  ${line}"
+    done <<< "$input"
+}
+
+# Format inline markdown: **bold**, *italic*, `code`
+_format_inline() {
+    local text="$1"
+
+    # Bold: **text** or __text__
+    text=$(echo "$text" | sed -E "s/\*\*([^*]+)\*\*/${BOLD}\1${RESET}/g")
+    text=$(echo "$text" | sed -E "s/__([^_]+)__/${BOLD}\1${RESET}/g")
+
+    # Italic: *text* or _text_ (avoid matching within words)
+    text=$(echo "$text" | sed -E "s/([^*])\*([^*]+)\*([^*])/\1${YELLOW}\2${RESET}\3/g")
+    text=$(echo "$text" | sed -E "s/^\*([^*]+)\*/${YELLOW}\1${RESET}/g")
+
+    # Inline code: `text`
+    text=$(echo "$text" | sed -E "s/\`([^\`]+)\`/${BG_BLACK}${CYAN}\1${RESET}/g")
+
+    echo -e "$text"
+}
+
 do_analysis() {
     local active
     active=$(_ai_get_active)
@@ -1337,7 +1688,7 @@ except Exception as e:
     echo -e "${CYAN}${BOLD}🤖 AI Analysis for: $current_exercise${RESET}"
     echo -e "${WHITE}  Provider: ${active} | Model: ${model}${RESET}"
     echo "=================================================="
-    echo -e "${WHITE}$ai_response${RESET}"
+    format_ai_output "$ai_response"
     echo "=================================================="
     echo -e "${YELLOW}Run 'analysis' again after fixing, or 'cases' to re-test.${RESET}"
 }
