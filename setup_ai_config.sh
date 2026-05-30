@@ -39,8 +39,8 @@ default_model=deepseek-chat
 [gemini]
 endpoint=https://generativelanguage.googleapis.com/v1beta/openai
 key=
-models=gemini-2.0-flash gemini-2.5-flash gemini-2.5-pro
-default_model=gemini-2.0-flash
+models=gemini-3.1-flash-lite gemini-2.5-flash
+default_model=gemini-3.1-flash-lite
 
 [openrouter]
 endpoint=https://openrouter.ai/api/v1

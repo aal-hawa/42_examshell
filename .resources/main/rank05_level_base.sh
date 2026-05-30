@@ -109,7 +109,7 @@ while true; do
             ;;
         choose)
             if [[ -z "$arg" || "$arg" == "$input" ]]; then
-                # No argument → launch interactive arrow-key picker
+                # No argument → launch interactive picker
                 if interactive_choose; then
                     clear_cases
                     chosen="$chosen_exercise"

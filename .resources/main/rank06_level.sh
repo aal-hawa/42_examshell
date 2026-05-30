@@ -29,67 +29,34 @@ shuffle_array() {
     shuffled=("${qsub[@]}")
 }
 
-# Interactive exercise picker (numbered menu)
-interactive_choose() {
-    local total=${#all_exercises[@]}
-
-    while true; do
-        clear
-        echo -e "${CYAN}${BOLD}  Exercises in ${rank}${RESET}"
-        echo "=================================================="
-        local idx=0
-        for ex in "${all_exercises[@]}"; do
-            if [[ "$ex" == "$current_exercise" ]]; then
-                echo -e "  ${YELLOW}${BOLD}→ $((idx+1)). ${ex}  ◄ current${RESET}"
-            else
-                echo -e "  ${WHITE}  $((idx+1)). ${ex}${RESET}"
-            fi
-            idx=$((idx + 1))
-        done
-        echo "=================================================="
-        echo -e "  ${WHITE}Enter number (1-${total}), name, or 'q' to cancel:${RESET}"
-
-        local choice
-        read -rp "  /> " choice
-
-        # Cancel
-        if [[ -z "$choice" || "$choice" == "q" || "$choice" == "Q" ]]; then
-            echo -e "${YELLOW}Selection cancelled.${RESET}"
-            return 1
-        fi
-
-        # If it's a number, resolve to exercise name
-        local resolved="$choice"
-        if [[ "$choice" =~ ^[0-9]+$ ]]; then
-            local num_idx=$((choice - 1))
-            if [[ $num_idx -ge 0 && $num_idx -lt $total ]]; then
-                chosen_exercise="${all_exercises[$num_idx]}"
-                return 0
-            else
-                echo -e "${RED}Invalid number: $choice. Valid range: 1-${total}${RESET}"
-                sleep 1
-                continue
-            fi
-        fi
-
-        # If it's a name, find it
-        local found=0
-        for ex in "${all_exercises[@]}"; do
-            if [[ "$ex" == "$resolved" ]]; then
-                found=1
-                break
-            fi
-        done
-
-        if [[ $found -eq 1 ]]; then
-            chosen_exercise="$resolved"
-            return 0
-        else
-            echo -e "${RED}Exercise '$resolved' not found in this level.${RESET}"
-            sleep 1
-            continue
-        fi
-    done
+# Override show_help to add 'menu' command (only in practice mode)
+show_help() {
+    echo -e "${CYAN}${BOLD}Available Commands:${RESET}"
+    echo "=================================================="
+    echo -e "  ${GREEN}list${RESET}              Show all exercises in this level"
+    echo -e "  ${GREEN}choose${RESET}            Pick an exercise from a numbered menu"
+    echo -e "  ${GREEN}choose <name|num>${RESET}  Pick an exercise by name or number directly"
+    echo -e "  ${GREEN}next${RESET}              Get a random next exercise"
+    echo -e "  ${GREEN}test${RESET}              Test your code (stops at first failure)"
+    echo -e "  ${GREEN}cases${RESET}             Run ALL test cases & show detailed results"
+    echo -e "  ${GREEN}analysis${RESET}              AI analysis of test failures (needs API key)"
+    echo -e "  ${GREEN}setai add <n> <ep> [k] [m]${RESET}  Add AI provider"
+    echo -e "  ${GREEN}setai remove <name>${RESET}       Remove AI provider"
+    echo -e "  ${GREEN}setai use <name>${RESET}          Switch active AI provider"
+    echo -e "  ${GREEN}setai key <name> <key>${RESET}    Set API key for a provider"
+    echo -e "  ${GREEN}setai addmodel <name> <model>${RESET}  Add model to a provider"
+    echo -e "  ${GREEN}setai rmodel <name> <model>${RESET}   Remove model from a provider"
+    echo -e "  ${GREEN}setai defaultmodel <name> <m>${RESET}  Set default model for provider"
+    echo -e "  ${GREEN}setai model <name> <model>${RESET} Set default model (add if new)"
+    echo -e "  ${GREEN}setai endpoint <name> <url>${RESET} Set endpoint for a provider"
+    echo -e "  ${GREEN}showai${RESET}                Show all AI provider configurations"
+    echo -e "  ${GREEN}status${RESET}            Show current session info"
+    echo -e "  ${GREEN}clean${RESET}             Remove compiled artifacts & temp files (.o, binaries, logs)"
+    echo -e "  ${GREEN}fclean${RESET}            Full clean: clean + remove rendu/ & trace/ workspaces"
+    echo -e "  ${GREEN}menu${RESET}              Return to main menu"
+    echo -e "  ${GREEN}help${RESET}              Show this help message"
+    echo -e "  ${GREEN}exit${RESET}              Exit the exam shell"
+    echo "=================================================="
 }
 
 # Setup files for a specific exercise
@@ -103,89 +70,6 @@ setup_exercise() {
     elif [[ "$ex_name" == "mini_serv" ]]; then
         touch "$base_dir/../../rendu/$ex_name/mini_serv.c"
     fi
-}
-
-# ─────────────────────────────────────────────────────
-#  'clean' — remove compiled artifacts and temp files
-# ─────────────────────────────────────────────────────
-
-do_clean() {
-    echo -e "${CYAN}${BOLD}🧹 Cleaning compiled artifacts and temp files...${RESET}"
-
-    # ── Current directory (exercise subject dir where tester.sh runs) ──
-
-    # Rank 02-04: standard test outputs
-    rm -f out1 out2 out1.txt out2.txt
-
-    # Generic compiled artifacts
-    rm -f *_test temp_*.o *.o
-
-    # Test output logs
-    rm -f tester_output.log test_output.txt
-
-    # Rank 02-04: diff-style output files
-    rm -f ref_output.txt user_output.txt
-    rm -f ref_output*.txt user_output*.txt
-
-    # Rank 03: broken_gnl / tsp generated files
-    rm -f test_gnl test_gnl_small tsp_test
-    rm -f test_main.c empty.txt
-    rm -f test*.txt test*_input.txt output*.txt
-
-    # Rank 04: ft_popen / picoshell / sandbox
-    rm -f ref_ft_popen user_ft_popen ft_popen
-    rm -f ref_picoshell user_picoshell picoshell
-    rm -f ref_sandbox user_sandbox sandbox
-
-    # Rank 04: argo / vbc (different binary naming)
-    rm -f ref usr out_ref.txt out_usr.txt
-
-    # Rank 05: bigint / polyset / vect2
-    rm -f ref_bigint user_bigint
-    rm -f ref_polyset user_polyset
-    rm -f ref_vect2 user_vect2
-    rm -f user_main.cpp user_main.tmp.cpp
-    rm -f user_bigint.hpp user_bigint.cpp user_bigint.tmp.cpp
-
-    # Rank 05: bsq / life
-    rm -f ref_bsq user_bsq
-    rm -f ref_life user_life
-    rm -f test*.map
-    rm -f ref_*.txt user_*.txt
-
-    # Rank 06: mini_serv / mini_db
-    rm -f mini_db mini_serv
-    rm -f user_mini_db
-    rm -f server_output.txt test_db.txt
-
-    # ── Rendu directory — remove .o files only (keep source) ──
-    if [ -d "$base_dir/../../rendu" ]; then
-        find "$base_dir/../../rendu" -name "*.o" -type f -delete 2>/dev/null
-    fi
-
-    # ── Temp files ──
-    rm -f /tmp/.exam_cases_* /tmp/.verbose_tester_*
-
-    echo -e "${GREEN}✔ Cleaned: .o files, compiled binaries, logs, and temp files removed.${RESET}"
-}
-
-do_fclean() {
-    do_clean
-
-    if [ -d "$base_dir/../../rendu" ]; then
-        rm -rf "$base_dir/../../rendu"
-        echo -e "${GREEN}✔ Removed rendu/ workspace.${RESET}"
-    fi
-
-    if [ -d "$base_dir/../../trace" ]; then
-        rm -rf "$base_dir/../../trace"
-        echo -e "${GREEN}✔ Removed trace/ backups.${RESET}"
-    fi
-
-    rm -f /tmp/.current_subject_*
-
-    echo -e "${CYAN}${BOLD}✔ Full clean complete — workspace is fresh.${RESET}"
-    echo -e "${YELLOW}Your source code in rendu/ has been removed. Use 'choose' or 'next' to start fresh.${RESET}"
 }
 
 # Display current exercise subject
@@ -217,7 +101,7 @@ if [ $i -ge $num ]; then
     echo "=============================================="
     read -rp "${GREEN}${BOLD}Please press enter for return to the menu.${RESET}" enterx
     sleep 2
-    cd ../../main
+    cd "$base_dir"
     bash menu.sh
     exit
 fi
@@ -239,7 +123,7 @@ while true; do
             ;;
         choose)
             if [[ -z "$arg" || "$arg" == "$input" ]]; then
-                # No argument → launch interactive arrow-key picker
+                # No argument → launch interactive picker
                 if interactive_choose; then
                     clear_cases
                     current_exercise="$chosen_exercise"
@@ -367,7 +251,7 @@ while true; do
             ;;
         *)
             echo -e "${RED}Unknown command: $input${RESET}"
-            echo -e "${YELLOW}Type 'help' to see all commands.${RESET}"
+            echo -e "${YELLOW}Type 'help' to see available commands.${RESET}"
             ;;
     esac
 done

@@ -64,7 +64,7 @@ shuffle_array() {
     shuffled=("${qsub[@]}")
 }
 
-# Show help for available commands
+# Override show_help to add 'menu' command (only in practice mode)
 show_help() {
     echo -e "${CYAN}${BOLD}Available Commands:${RESET}"
     echo "=================================================="
@@ -74,9 +74,6 @@ show_help() {
     echo -e "  ${GREEN}next${RESET}              Get a random next exercise"
     echo -e "  ${GREEN}test${RESET}              Test your code (stops at first failure)"
     echo -e "  ${GREEN}cases${RESET}             Run ALL test cases & show detailed results"
-    echo -e "  ${GREEN}status${RESET}            Show current session info"
-    echo -e "  ${GREEN}clean${RESET}             Remove compiled artifacts & temp files (.o, binaries, logs)"
-    echo -e "  ${GREEN}fclean${RESET}            Full clean: clean + remove rendu/ & trace/ workspaces"
     echo -e "  ${GREEN}analysis${RESET}              AI analysis of test failures (needs API key)"
     echo -e "  ${GREEN}setai add <n> <ep> [k] [m]${RESET}  Add AI provider"
     echo -e "  ${GREEN}setai remove <name>${RESET}       Remove AI provider"
@@ -88,103 +85,12 @@ show_help() {
     echo -e "  ${GREEN}setai model <name> <model>${RESET} Set default model (add if new)"
     echo -e "  ${GREEN}setai endpoint <name> <url>${RESET} Set endpoint for a provider"
     echo -e "  ${GREEN}showai${RESET}                Show all AI provider configurations"
+    echo -e "  ${GREEN}status${RESET}            Show current session info"
+    echo -e "  ${GREEN}clean${RESET}             Remove compiled artifacts & temp files (.o, binaries, logs)"
+    echo -e "  ${GREEN}fclean${RESET}            Full clean: clean + remove rendu/ & trace/ workspaces"
     echo -e "  ${GREEN}menu${RESET}              Return to main menu"
     echo -e "  ${GREEN}help${RESET}              Show this help message"
     echo -e "  ${GREEN}exit${RESET}              Exit the exam shell"
-    echo "=================================================="
-}
-
-# ─────────────────────────────────────────────────────
-#  Interactive exercise picker (numbered menu)
-# ─────────────────────────────────────────────────────
-
-interactive_choose() {
-    local total=${#all_exercises[@]}
-
-    while true; do
-        clear
-        echo -e "${CYAN}${BOLD}  Exercises in ${rank} > ${level}${RESET}"
-        echo "=================================================="
-        local idx=0
-        for ex in "${all_exercises[@]}"; do
-            if [[ "$ex" == "$current_exercise" ]]; then
-                echo -e "  ${YELLOW}${BOLD}→ $((idx+1)). ${ex}  ◄ current${RESET}"
-            else
-                echo -e "  ${WHITE}  $((idx+1)). ${ex}${RESET}"
-            fi
-            idx=$((idx + 1))
-        done
-        echo "=================================================="
-        echo -e "  ${WHITE}Enter number (1-${total}), name, or 'q' to cancel:${RESET}"
-
-        local choice
-        read -rp "  /> " choice
-
-        # Cancel
-        if [[ -z "$choice" || "$choice" == "q" || "$choice" == "Q" ]]; then
-            echo -e "${YELLOW}Selection cancelled.${RESET}"
-            return 1
-        fi
-
-        # If it's a number, resolve to exercise name
-        local resolved="$choice"
-        if [[ "$choice" =~ ^[0-9]+$ ]]; then
-            local num_idx=$((choice - 1))
-            if [[ $num_idx -ge 0 && $num_idx -lt $total ]]; then
-                chosen_exercise="${all_exercises[$num_idx]}"
-                return 0
-            else
-                echo -e "${RED}Invalid number: $choice. Valid range: 1-${total}${RESET}"
-                sleep 1
-                continue
-            fi
-        fi
-
-        # If it's a name, find it
-        local found=0
-        for ex in "${all_exercises[@]}"; do
-            if [[ "$ex" == "$resolved" ]]; then
-                found=1
-                break
-            fi
-        done
-
-        if [[ $found -eq 1 ]]; then
-            chosen_exercise="$resolved"
-            return 0
-        else
-            echo -e "${RED}Exercise '$resolved' not found in this level.${RESET}"
-            sleep 1
-            continue
-        fi
-    done
-}
-
-# Show list of all exercises in the current level
-show_list() {
-    echo -e "${CYAN}${BOLD}Exercises in ${rank} > ${level}:${RESET}"
-    echo "=================================================="
-    local idx=1
-    for ex in "${all_exercises[@]}"; do
-        if [[ "$ex" == "$current_exercise" ]]; then
-            echo -e "  ${YELLOW}${BOLD}→ ${idx}. ${ex}  ◄ current${RESET}"
-        else
-            echo -e "  ${WHITE}○ ${idx}. ${ex}${RESET}"
-        fi
-        idx=$((idx + 1))
-    done
-    echo "=================================================="
-    echo -e "  Total: ${num} exercises"
-}
-
-# Show current status
-show_status() {
-    echo -e "${CYAN}${BOLD}Session Status:${RESET}"
-    echo "=================================================="
-    echo -e "  Rank:    ${GREEN}${rank}${RESET}"
-    echo -e "  Level:   ${GREEN}${level}${RESET}"
-    echo -e "  Current: ${YELLOW}${BOLD}${current_exercise}${RESET}"
-    echo -e "  Total:   ${WHITE}${num} exercises in this level${RESET}"
     echo "=================================================="
 }
 
@@ -226,231 +132,6 @@ setup_exercise() {
     fi
 }
 
-# ─────────────────────────────────────────────────────
-#  'clean' — remove compiled artifacts and temp files
-# ─────────────────────────────────────────────────────
-
-do_clean() {
-    echo -e "${CYAN}${BOLD}🧹 Cleaning compiled artifacts and temp files...${RESET}"
-
-    # ── Current directory (exercise subject dir where tester.sh runs) ──
-
-    # Rank 02-04: standard test outputs
-    rm -f out1 out2 out1.txt out2.txt
-
-    # Generic compiled artifacts
-    rm -f *_test temp_*.o *.o
-
-    # Test output logs
-    rm -f tester_output.log test_output.txt
-
-    # Rank 02-04: diff-style output files
-    rm -f ref_output.txt user_output.txt
-    rm -f ref_output*.txt user_output*.txt
-
-    # Rank 03: broken_gnl / tsp generated files
-    rm -f test_gnl test_gnl_small tsp_test
-    rm -f test_main.c empty.txt
-    rm -f test*.txt test*_input.txt output*.txt
-
-    # Rank 04: ft_popen / picoshell / sandbox
-    rm -f ref_ft_popen user_ft_popen ft_popen
-    rm -f ref_picoshell user_picoshell picoshell
-    rm -f ref_sandbox user_sandbox sandbox
-
-    # Rank 04: argo / vbc (different binary naming)
-    rm -f ref usr out_ref.txt out_usr.txt
-
-    # Rank 05: bigint / polyset / vect2
-    rm -f ref_bigint user_bigint
-    rm -f ref_polyset user_polyset
-    rm -f ref_vect2 user_vect2
-    rm -f user_main.cpp user_main.tmp.cpp
-    rm -f user_bigint.hpp user_bigint.cpp user_bigint.tmp.cpp
-
-    # Rank 05: bsq / life
-    rm -f ref_bsq user_bsq
-    rm -f ref_life user_life
-    rm -f test*.map
-    rm -f ref_*.txt user_*.txt
-
-    # Rank 06: mini_serv / mini_db
-    rm -f mini_db mini_serv
-    rm -f user_mini_db
-    rm -f server_output.txt test_db.txt
-
-    # ── Rendu directory — remove .o files only (keep source) ──
-    if [ -d "$base_dir/../../rendu" ]; then
-        find "$base_dir/../../rendu" -name "*.o" -type f -delete 2>/dev/null
-    fi
-
-    # ── Temp files ──
-    rm -f /tmp/.exam_cases_* /tmp/.verbose_tester_*
-
-    echo -e "${GREEN}✔ Cleaned: .o files, compiled binaries, logs, and temp files removed.${RESET}"
-}
-
-# ─────────────────────────────────────────────────────
-#  'fclean' — clean + remove workspace (rendu & trace)
-# ─────────────────────────────────────────────────────
-
-do_fclean() {
-    do_clean
-
-    if [ -d "$base_dir/../../rendu" ]; then
-        rm -rf "$base_dir/../../rendu"
-        echo -e "${GREEN}✔ Removed rendu/ workspace.${RESET}"
-    fi
-
-    if [ -d "$base_dir/../../trace" ]; then
-        rm -rf "$base_dir/../../trace"
-        echo -e "${GREEN}✔ Removed trace/ backups.${RESET}"
-    fi
-
-    rm -f /tmp/.current_subject_*
-
-    echo -e "${CYAN}${BOLD}✔ Full clean complete — workspace is fresh.${RESET}"
-    echo -e "${YELLOW}Your source code in rendu/ has been removed. Use 'choose' or 'next' to start fresh.${RESET}"
-}
-
-# ─────────────────────────────────────────────────────
-#  'cases' command — run ALL test cases & show details
-# ─────────────────────────────────────────────────────
-
-get_cases_file() {
-    echo "/tmp/.exam_cases_${current_exercise}"
-}
-
-clear_cases() {
-    rm -f "$(get_cases_file)"
-}
-
-run_all_cases() {
-    local cases_file
-    cases_file="$(get_cases_file)"
-
-    if [ ! -f "tester.sh" ]; then
-        echo -e "${YELLOW}No tester.sh found for this exercise.${RESET}"
-        return 1
-    fi
-
-    echo -e "${CYAN}${BOLD}📊 Running ALL test cases for: $current_exercise${RESET}"
-    echo "=================================================="
-
-    local temp_tester="/tmp/.verbose_tester_$$.sh"
-
-    {
-        cat << 'HEADER'
-#!/bin/bash
-__test_num=0
-
-exit() { :; }
-
-__show_diff_details() {
-    local pairs="out1.txt:out2.txt ref_output.txt:user_output.txt out_ref.txt:out_usr.txt"
-    for i in 1 2 3 4 5 6 7 8; do
-        pairs="$pairs ref_output${i}.txt:user_output${i}.txt"
-    done
-    for pair in $pairs; do
-        local f1="${pair%%:*}"
-        local f2="${pair##*:}"
-        if [ -f "$f1" ] && [ -f "$f2" ]; then
-            if ! command diff -q "$f1" "$f2" >/dev/null 2>&1; then
-                echo ""
-                echo "  ──── Detailed Diff ($f1 vs $f2) ────"
-                command diff "$f1" "$f2" 2>&1 | head -30
-                echo "  ─────────────────────────────────────"
-                return
-            fi
-        fi
-    done
-}
-
-diff() {
-    if [ "$1" = "-q" ] || [ "$1" = "--brief" ]; then
-        shift
-        if ! command diff -q "$@" >/dev/null 2>&1; then
-            echo "" >&2
-            echo "  ──── Detailed Diff ────" >&2
-            command diff "$@" 2>&1 | head -30 >&2
-            echo "  ───────────────────────" >&2
-            return 1
-        fi
-        return 0
-    else
-        command diff "$@"
-    fi
-}
-
-HEADER
-
-        sed -E \
-            -e 's/^#\s*([0-9]+)\.\s*test/__test_num=$((__test_num+1)); echo ""; echo "── Test Case \1 ──"/' \
-            -e '/Your Output/a\    __show_diff_details' \
-            -e 's/^\s*read\s+-rp\b.*/: # skip interactive prompt/' \
-            -e 's/^\s*read\s+-p\b.*/: # skip interactive prompt/' \
-            -e 's/^\s*read\s+-r\b.*/: # skip interactive prompt/' \
-            -e 's/^\s*read\s+\w+\s*$/echo "" # skip simple read/' \
-            tester.sh
-
-        cat << 'FOOTER'
-
-echo ""
-echo "=================================================="
-echo "  📊 Test Summary for: $(basename "$(pwd)")"
-if [ "$__test_num" -gt 0 ]; then
-    echo "  Test sections run: $__test_num"
-fi
-FOOTER
-    } > "$temp_tester"
-    chmod +x "$temp_tester"
-
-    local output
-    output=$(timeout 30 bash "$temp_tester" </dev/null 2>&1)
-    local timeout_code=$?
-
-    echo "$output" > "$cases_file"
-    echo "$output"
-
-    local fail_count pass_count
-    fail_count=$(echo "$output" | grep -ciE "FAIL|❌" 2>/dev/null || echo 0)
-    pass_count=$(echo "$output" | grep -ci "PASSED" 2>/dev/null || echo 0)
-
-    if [ $timeout_code -eq 124 ]; then
-        echo -e "${RED}${BOLD}⚠ TIMEOUT${RESET} — a test case took too long (possible infinite loop)"
-        echo -e "${YELLOW}Some cases may not have been tested.${RESET}"
-    fi
-
-    echo "=================================================="
-    if [ "$fail_count" -eq 0 ] && [ "$pass_count" -gt 0 ]; then
-        echo -e "${GREEN}${BOLD}✔ All $pass_count test case(s) PASSED!${RESET}"
-    elif [ "$fail_count" -gt 0 ]; then
-        echo -e "${RED}${BOLD}✘ $fail_count failure(s) found${RESET}"
-        echo -e "${YELLOW}Fix the errors and run 'cases' again to re-check.${RESET}"
-    else
-        echo -e "${YELLOW}No clear test results detected. Check the output above.${RESET}"
-    fi
-    echo "=================================================="
-
-    rm -f "$temp_tester"
-}
-
-show_cases() {
-    local cases_file
-    cases_file="$(get_cases_file)"
-
-    if [ ! -f "$cases_file" ]; then
-        run_all_cases
-        return
-    fi
-
-    echo -e "${CYAN}${BOLD}📊 Last Test Results for: $current_exercise${RESET}"
-    echo "=================================================="
-    cat "$cases_file"
-    echo "=================================================="
-    echo -e "${YELLOW}Run 'cases' again to re-test, or 'test' for exam-mode test.${RESET}"
-}
-
 # Display the current exercise subject
 show_subject() {
     cd "$base_dir/../$rank/$level/$current_exercise" || {
@@ -479,7 +160,7 @@ if [ $i -ge $num ]; then
     echo "=============================================="
     read -rp "${GREEN}${BOLD}Please press enter for return to the menu.${RESET}" enterx
     sleep 2
-    cd ../../main
+    cd "$base_dir"
     bash menu.sh
     exit
 fi
@@ -501,7 +182,7 @@ while true; do
             ;;
         choose)
             if [[ -z "$arg" || "$arg" == "$input" ]]; then
-                # No argument → launch interactive arrow-key picker
+                # No argument → launch interactive picker
                 if interactive_choose; then
                     clear_cases
                     current_exercise="$chosen_exercise"
@@ -512,12 +193,13 @@ while true; do
             else
                 # If arg is a number, resolve it to exercise name
                 resolved="$arg"
+                total=${#all_exercises[@]}
                 if [[ "$arg" =~ ^[0-9]+$ ]]; then
                     idx=$((arg - 1))
-                    if [[ $idx -ge 0 && $idx -lt $num ]]; then
+                    if [[ $idx -ge 0 && $idx -lt $total ]]; then
                         resolved="${all_exercises[$idx]}"
                     else
-                        echo -e "${RED}Invalid number: $arg. Valid range: 1-$num${RESET}"
+                        echo -e "${RED}Invalid number: $arg. Valid range: 1-$total${RESET}"
                         echo -e "${YELLOW}Type 'list' to see available exercises.${RESET}"
                         continue
                     fi
