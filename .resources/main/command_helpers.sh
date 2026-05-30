@@ -1540,23 +1540,25 @@ do_analysis() {
     cases_file="$(get_cases_file)"
 
     if [ ! -f "$cases_file" ]; then
-        echo -e "${YELLOW}No test results found. Running 'cases' first...${RESET}"
-        run_all_cases
-        cases_file="$(get_cases_file)"
-    fi
-
-    if [ ! -f "$cases_file" ]; then
-        echo -e "${RED}✘ No test results available for analysis.${RESET}"
+        echo -e "${YELLOW}No test results found. Run 'cases' first to see test output.${RESET}"
         return 1
     fi
 
     local test_output
     test_output=$(cat "$cases_file")
 
+    # Check for failures — multiple patterns for robustness
     local fail_count
-    fail_count=$(echo "$test_output" | grep -ciE "FAIL|❌" 2>/dev/null || echo 0)
-    if [ "$fail_count" -eq 0 ]; then
-        echo -e "${GREEN}${BOLD}✔ No failures detected — all tests passed! Nothing to analyze.${RESET}"
+    fail_count=$(echo "$test_output" | grep -ciE "FAIL|❌|KO|Error|differ|mismatch|wrong output|unexpected" 2>/dev/null || echo 0)
+    local pass_count
+    pass_count=$(echo "$test_output" | grep -ci "PASSED" 2>/dev/null || echo 0)
+
+    if [ "$fail_count" -eq 0 ] && [ "$pass_count" -gt 0 ]; then
+        echo -e "${GREEN}${BOLD}✔ All $pass_count test case(s) passed — nothing to analyze!${RESET}"
+        return 0
+    elif [ "$fail_count" -eq 0 ]; then
+        echo -e "${YELLOW}No clear failures detected in test output. Nothing to analyze.${RESET}"
+        echo -e "${YELLOW}Run 'cases' again to re-test, or check the output above.${RESET}"
         return 0
     fi
 
